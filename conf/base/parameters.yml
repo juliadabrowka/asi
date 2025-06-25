@@ -1,0 +1,14 @@
+model_options:
+  label_column: deposit
+  time_limit: 600  # in seconds
+  presets: best_quality
+  test_size: 0.2
+  random_state: 42
+  learning_rate: 0.001
+  epochs: 100
+  batch_size: 32
+
+
+confusion_matrix_path: data/08_reporting/confusion_matrix.png
+classification_report_path: data/08_reporting/classification_report.txt
+final_assessment_path: data/08_reporting/final_assessment.txt
