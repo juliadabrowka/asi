@@ -22,6 +22,5 @@ def register_pipelines():
         "dp": data_processing_pipeline,
         "train": model_training_pipeline,
         "mv": model_validation_pipeline,
-        "model_validation": model_validation_pipeline,
         "full": data_processing_pipeline + model_training_pipeline + model_validation_pipeline,
     }

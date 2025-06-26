@@ -4,9 +4,6 @@ import numpy as np
 import os
 import pickle
 import time
-from PIL import Image
-import io
-import base64
 from pathlib import Path
 import sys
 
@@ -15,7 +12,7 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 # AutoGluon Tabular
 try:
-    from autogluon.multimodal import MultiModalPredictor
+    from autogluon.tabular import TabularPredictor
 except ImportError:
     st.error("AutoGluon not installed. Please install it with `pip install autogluon`.")
     st.stop()
@@ -64,16 +61,34 @@ def load_model():
             st.success("Model loaded from pickle file")
             with open(pickle_path, 'rb') as f:
                 model = pickle.load(f)
-            if hasattr(model, '_learner') and model._learner is not None:
-                return model
+            
+            # Check if model is valid
+            if hasattr(model, 'predict') and callable(getattr(model, 'predict', None)):
+                # Warm up the model with a dummy prediction
+                dummy_data = pd.DataFrame([{
+                    "age": 35, "job": "admin.", "marital": "married", 
+                    "education": "secondary", "default": "no", "balance": 0,
+                    "housing": "yes", "loan": "no", "contact": "cellular", 
+                    "month": "may", "day": 15, "duration": 200, "campaign": 2,
+                    "pdays": -1, "previous": 0, "poutcome": "unknown"
+                }])
+                try:
+                    model.predict(dummy_data)  # Warm-up prediction
+                    return model
+                except Exception as warmup_error:
+                    st.error(f"Model warm-up failed: {str(warmup_error)}")
+                    st.info("Please retrain the model with the current AutoGluon version.")
+                    return None
             else:
                 st.error("Model loaded but not properly initialized. Please retrain the model.")
                 return None
         else:
             st.error("No trained model found at expected path.")
+            st.info("Please run the training pipeline first: python quick_train.py")
             return None
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
+        st.info("This might be due to AutoGluon version incompatibility. Please retrain the model.")
         return None
 
 def predict_customer(model, input_dict):
@@ -81,24 +96,19 @@ def predict_customer(model, input_dict):
     try:
         df = pd.DataFrame([input_dict])
         start = time.time()
-        prediction = model.predict(df)
-        prob = model.predict_proba(df).max(axis=1).values[0]
+        # Use batch prediction for better performance
+        prediction = model.predict(df, as_pandas=False)  # Faster than pandas output
+        prob = model.predict_proba(df, as_pandas=False).max(axis=1)[0]  # Faster numpy output
         latency = time.time() - start
-        return prediction.values[0], prob, latency
+        
+        # Convert numeric prediction back to string label
+        # Based on the encoding: 0 = "yes", 1 = "no"
+        predicted_label = "yes" if prediction[0] == 0 else "no"
+        
+        return predicted_label, prob, latency
     except Exception as e:
         st.error(f"Prediction error: {str(e)}")
         return "Unknown", 0.0, 0.0
-
-@st.cache_data
-def load_label_map():
-    """Load the label map from saved pickle file."""
-    label_map_path = "data/06_models/label_map.pkl"
-    if os.path.exists(label_map_path):
-        with open(label_map_path, "rb") as f:
-            return pickle.load(f)
-    else:
-        st.warning("Label map not found. Running in DEMO mode.")
-        return {}
 
 def main():
     # header
@@ -134,12 +144,13 @@ def main():
             ])
             marital = st.selectbox("Marital Status", ["married", "single", "divorced"])
             education = st.selectbox("Education", ["primary", "secondary", "tertiary", "unknown"])
+            default = st.selectbox("Default Credit", ["yes", "no"])
+            balance = st.number_input("Balance", min_value=-10000, max_value=100000, value=0, step=100)
             housing = st.selectbox("Housing Loan", ["yes", "no"])
-            contact = st.selectbox("Contact Type", ["cellular", "telephone"])
+            loan = st.selectbox("Personal Loan", ["yes", "no"])
 
         with col2:
-            default = st.selectbox("Default Credit", ["yes", "no"])
-            loan = st.selectbox("Personal Loan", ["yes", "no"])
+            contact = st.selectbox("Contact Type", ["cellular", "telephone", "unknown"])
             month = st.selectbox("Last Contact Month", [
                 "jan", "feb", "mar", "apr", "may", "jun",
                 "jul", "aug", "sep", "oct", "nov", "dec"
@@ -147,6 +158,9 @@ def main():
             day = st.slider("Day of Month Contact", 1, 31, 15)
             duration = st.slider("Contact Duration (sec)", 0, 3000, 200)
             campaign = st.slider("Campaign Contacts", 1, 50, 2)
+            pdays = st.number_input("Days Since Last Contact", min_value=-1, max_value=1000, value=-1, step=1)
+            previous = st.number_input("Previous Contacts", min_value=0, max_value=100, value=0, step=1)
+            poutcome = st.selectbox("Previous Outcome", ["unknown", "other", "failure", "success"])
 
         submitted = st.form_submit_button("🔍 Predict")
 
@@ -157,13 +171,17 @@ def main():
             "marital": marital,
             "education": education,
             "default": default,
+            "balance": balance,
             "housing": housing,
             "loan": loan,
             "contact": contact,
             "month": month,
             "day": day,
             "duration": duration,
-            "campaign": campaign
+            "campaign": campaign,
+            "pdays": pdays,
+            "previous": previous,
+            "poutcome": poutcome
         }
 
         if model is None:
@@ -175,6 +193,12 @@ def main():
             predicted_label, confidence, latency = predict_customer(model, input_dict)
 
         st.markdown('<div class="prediction-box">', unsafe_allow_html=True)
+        # Ensure predicted_label is a string before calling .upper()
+        if isinstance(predicted_label, (int, np.integer)):
+            predicted_label = "yes" if predicted_label == 0 else "no"
+        elif not isinstance(predicted_label, str):
+            predicted_label = str(predicted_label)
+        
         st.markdown(f"## Prediction: **{predicted_label.upper()}**")
         st.markdown(f"📊 Confidence: **{confidence:.1%}**")
         st.markdown(f"⏱️ Inference Time: **{latency:.3f}s**")

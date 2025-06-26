@@ -1,12 +1,12 @@
 model_options:
   label_column: deposit
-  time_limit: 600  # in seconds
-  presets: best_quality
+  time_limit: 120  # Reduced from 600 to 120 seconds (2 minutes)
+  presets: medium_quality  # Changed from best_quality to medium_quality for faster training
   test_size: 0.2
   random_state: 42
   learning_rate: 0.001
-  epochs: 100
-  batch_size: 32
+  epochs: 50  # Reduced from 100 to 50
+  batch_size: 64  # Increased from 32 to 64 for better GPU utilization
 
 
 confusion_matrix_path: data/08_reporting/confusion_matrix.png

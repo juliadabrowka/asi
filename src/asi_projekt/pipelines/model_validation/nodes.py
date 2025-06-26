@@ -6,14 +6,29 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, confusion_matrix, classification_report
 )
-from autogluon.multimodal import MultiModalPredictor
+from autogluon.tabular import TabularPredictor
 
 
-def evaluate_model_metrics(test_df, parameters):
+def evaluate_model_metrics(test_df, model_options):
     model_path = "data/06_models/autogluon_model"
-    label_column = parameters["label_column"]
+    label_column = model_options["label_column"]
 
-    predictor = MultiModalPredictor.load(model_path)
+    try:
+        predictor = TabularPredictor.load(model_path)
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        print("Please run the training pipeline first")
+        return {
+            "predictions": [],
+            "true_labels": test_df[label_column].values,
+            "accuracy": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1_score": 0.0,
+            "inference_time": 0.0,
+            "avg_inference_time": 0.0,
+            "class_labels": ["no", "yes"],
+        }
 
     start_time = time.time()
     predictions = predictor.predict(test_df)
@@ -28,7 +43,7 @@ def evaluate_model_metrics(test_df, parameters):
         "f1_score": f1_score(test_df[label_column], predictions, average="weighted"),
         "inference_time": elapsed,
         "avg_inference_time": elapsed / len(test_df),
-        "class_labels": predictor.class_labels,
+        "class_labels": ["no", "yes"],
     }
 
 
