@@ -98,14 +98,21 @@ def predict_customer(model, input_dict):
         start = time.time()
         # Use batch prediction for better performance
         prediction = model.predict(df, as_pandas=False)  # Faster than pandas output
-        prob = model.predict_proba(df, as_pandas=False).max(axis=1)[0]  # Faster numpy output
+        proba = model.predict_proba(df, as_pandas=False)  # Get all probabilities
         latency = time.time() - start
         
         # Convert numeric prediction back to string label
         # Based on the encoding: 0 = "yes", 1 = "no"
         predicted_label = "yes" if prediction[0] == 0 else "no"
         
-        return predicted_label, prob, latency
+        # Get the confidence for the predicted class
+        # proba[0] contains [P(yes), P(no)] for the first (and only) prediction
+        if prediction[0] == 0:  # Predicted "yes"
+            confidence = proba[0][0]  # P(yes)
+        else:  # Predicted "no"
+            confidence = proba[0][1]  # P(no)
+        
+        return predicted_label, confidence, latency
     except Exception as e:
         st.error(f"Prediction error: {str(e)}")
         return "Unknown", 0.0, 0.0
@@ -201,6 +208,16 @@ def main():
         
         st.markdown(f"## Prediction: **{predicted_label.upper()}**")
         st.markdown(f"📊 Confidence: **{confidence:.1%}**")
+        
+        # Add confidence interpretation
+        if confidence >= 0.8:
+            confidence_level = "🟢 High Confidence"
+        elif confidence >= 0.6:
+            confidence_level = "🟡 Medium Confidence"
+        else:
+            confidence_level = "🔴 Low Confidence"
+        
+        st.markdown(f"**{confidence_level}**")
         st.markdown(f"⏱️ Inference Time: **{latency:.3f}s**")
         st.markdown('</div>', unsafe_allow_html=True)
 
